@@ -357,3 +357,69 @@ func TestSharedInformerErrorHandling(t *testing.T) {
 	}
 	close(stop)
 }
+
+func TestSharedInformerRemoveHandler(t *testing.T) {
+	source := fcache.NewFakeControllerSource()
+	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
+	source.ListError = fmt.Errorf("Access Denied")
+
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(ExtendedSharedIndexInformer)
+
+	handler1 := &ResourceEventHandlerFuncs{}
+	informer.AddEventHandler(handler1)
+	handler2 := &ResourceEventHandlerFuncs{}
+	informer.AddEventHandler(handler2)
+
+	if !informer.HasEventHandlers() {
+		t.Errorf("informer pretends not have a registered handler")
+	}
+
+	if err := informer.RemoveEventHandler(handler2); err != nil {
+		t.Errorf("removing on pointer handler failed: %s", err)
+	}
+	if !informer.HasEventHandlers() {
+		t.Errorf("informer pretends not have a registered handler after removing first of two")
+	}
+
+	if err := informer.RemoveEventHandler(handler1); err != nil {
+		t.Errorf("removing on pointer handler failed: %s", err)
+	}
+	if informer.HasEventHandlers() {
+		t.Errorf("informer pretends to still have registered handlers after removing both handlers")
+	}
+}
+
+func TestSharedInformerRemoveHandlerFailure(t *testing.T) {
+	source := fcache.NewFakeControllerSource()
+	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
+	source.ListError = fmt.Errorf("Access Denied")
+
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(ExtendedSharedIndexInformer)
+
+	handler1 := ResourceEventHandlerFuncs{}
+	informer.AddEventHandler(handler1)
+	handler2 := &ResourceEventHandlerFuncs{}
+	informer.AddEventHandler(handler2)
+
+	if !informer.HasEventHandlers() {
+		t.Errorf("informer pretends not have a registered handler")
+	}
+
+	if err := informer.RemoveEventHandler(handler2); err != nil {
+		t.Errorf("removing on pointer handler failed: %s", err)
+	}
+	if !informer.HasEventHandlers() {
+		t.Errorf("informer pretends not have a registered handler after removing first of two")
+	}
+
+	if err := informer.RemoveEventHandler(handler1); err == nil {
+		t.Errorf("removing on value handler does not fail")
+	} else {
+		if err.Error() != "uncomparable handler" {
+			t.Errorf("unexpected remove error: %s", err)
+		}
+	}
+	if !informer.HasEventHandlers() {
+		t.Errorf("informer pretends not have a registered handler after failed removal")
+	}
+}
