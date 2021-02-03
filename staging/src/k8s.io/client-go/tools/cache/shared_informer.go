@@ -580,6 +580,8 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 // results in an appropriate error.
 // This feature can be used to dynamically add and remove watches again depending
 // on the actual state of a controller.
+// Please note: If, for some reason, the same handler has been added multiple
+// times, all registrations will be removed.
 type EventHandlerRemovable interface {
 	RemoveEventHandler(handler ResourceEventHandler) error
 }
@@ -593,7 +595,7 @@ type EventHandlerRemovable interface {
 type ExtendedSharedIndexInformer interface {
 	SharedIndexInformer
 	EventHandlerRemovable
-	HasEventHandlers() bool
+	EventHandlerCount() int
 	IsStopped() bool
 	IsStarted() bool
 }
@@ -612,19 +614,18 @@ func (s *sharedIndexInformer) IsStopped() bool {
 	return s.stopped
 }
 
-// HasEventHandlers reports whether the informer still has registered
+// EventHandlerCount reports whether the informer still has registered
 // event handlers
-func (s *sharedIndexInformer) HasEventHandlers() bool {
+func (s *sharedIndexInformer) EventHandlerCount() int {
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()
-	if s.stopped {
-		return false
-	}
-	return len(s.processor.listeners) > 0
+	return len(s.processor.listeners)
 }
 
 // RemoveEventHandler tries to remove a formerly added event handler again.
 // Only event handlers that are (go) comparable can be removed again.
+// Please note: If, for some reason, the same handler has been added multiple
+// times, all registrations will be removed.
 func (s *sharedIndexInformer) RemoveEventHandler(handler ResourceEventHandler) error {
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()
@@ -749,29 +750,35 @@ func (p *sharedProcessor) removeListenerFor(handler ResourceEventHandler) {
 	p.listenersLock.Lock()
 	defer p.listenersLock.Unlock()
 
-	listener := p.removeListenerLockedFor(handler)
-	if p.listenersStarted && listener != nil {
-		close(listener.addCh)
+	listeners := p.removeListenerLockedFor(handler)
+	if p.listenersStarted && len(listeners) > 0 {
+		for _, l := range listeners {
+			close(l.addCh)
+		}
 	}
 }
 
-func (p *sharedProcessor) removeListenerLockedFor(handler ResourceEventHandler) *processorListener {
+func (p *sharedProcessor) removeListenerLockedFor(handler ResourceEventHandler) []*processorListener {
 	if !reflect.ValueOf(handler).Type().Comparable() {
 		return nil
 	}
-	var listener *processorListener
-	for i, l := range p.listeners {
+	var listeners []*processorListener
+	for i := 0; i < len(p.listeners); i++ {
+		l := p.listeners[i]
 		if reflect.ValueOf(l.handler).Type().Comparable() && l.handler == handler {
-			listener = l
+			listeners = append(listeners, l)
 			p.listeners = append(p.listeners[:i], p.listeners[i+1:]...)
+			i--
 		}
 	}
-	for i, l := range p.syncingListeners {
+	for i := 0; i < len(p.syncingListeners); i++ {
+		l := p.syncingListeners[i]
 		if reflect.ValueOf(l.handler).Type().Comparable() && l.handler == handler {
 			p.syncingListeners = append(p.syncingListeners[:i], p.syncingListeners[i+1:]...)
+			i--
 		}
 	}
-	return listener
+	return listeners
 }
 
 // processorListener relays notifications from a sharedProcessor to
