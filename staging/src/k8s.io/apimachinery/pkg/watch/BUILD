@@ -32,6 +32,7 @@ go_test(
     srcs = [
         "filter_test.go",
         "mux_test.go",
+        "streamwatcher_api_test.go",
         "streamwatcher_test.go",
         "watch_test.go",
     ],

@@ -23,6 +23,7 @@ import (
 	goruntime "runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	. "k8s.io/apimachinery/pkg/watch"
@@ -33,7 +34,7 @@ type fakeDecoder struct {
 	items  chan Event
 	err    error
 	count  int
-	closed int
+	closed bool
 }
 
 func (f *fakeDecoder) getErr() error {
@@ -64,6 +65,10 @@ func (f *fakeDecoder) Decode() (action EventType, object runtime.Object, err err
 	}
 	item, open := <-f.items
 	if !open {
+		err = f.getErr()
+		if err != nil {
+			return "", nil, err
+		}
 		return action, nil, io.EOF
 	}
 	f.lock.Lock()
@@ -75,10 +80,10 @@ func (f *fakeDecoder) Decode() (action EventType, object runtime.Object, err err
 func (f *fakeDecoder) Close() {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	if f.items != nil && f.closed == 0 {
+	if f.items != nil && !f.closed {
+		f.closed = true
 		close(f.items)
 	}
-	f.closed++
 }
 
 type fakeReporter struct {
@@ -165,14 +170,10 @@ func TestStreamWatcherStopRace(t *testing.T) {
 		t.Logf("GOT 1: %+v\n", got)
 	}
 
-	if fd.getCount() < 2 { // FOR
+	for fd.getCount() < 2 {
 		t.Logf("waiting for receive...\n")
 		goruntime.Gosched()
 	}
-	fd.setErr(fmt.Errorf("some stop error on underlying watch stream"))
-	fd.Close()
-	// now next decode would fail, it is called after the next successful consumption
-
 	t.Logf("waiting for event 2\n")
 	got, open = <-sw.ResultChan()
 	if !open {
@@ -184,31 +185,19 @@ func TestStreamWatcherStopRace(t *testing.T) {
 		t.Logf("GOT 2: %+v\n", got)
 	}
 
-	// ok, now the streamwatcher receive would try to decode the next
-	// element from the stream, which will provide the error set above.
-	// wait, until the error has been consumed, this will initiate
-	// the error send request.
-	if fd.getCount() < 3 { // FOR
-		t.Logf("waiting for error received...\n")
-		goruntime.Gosched()
-	}
-	sw.Stop()
+	fd.setErr(fmt.Errorf("some stop error on underlying watch stream"))
+	sw.Test() // enforce a stop just after the stop check in stream error handling
+	fd.Close()
 	// Be sure the receive go routine had a chance to run.
 	// (and react on the new stop channel)
 	goruntime.Gosched()
-	// now the send operation should have been canceled
-	// (and the go routine should have been finished)
-	got, open = <-sw.ResultChan()
-	// in real life scenario this receive would not happen anymore after
-	// the stream has been externally stopped, so the sending go routine
-	// would block forever
-	if open {
-		t.Logf("GOT: %+v\n", got)
-		t.Errorf("unexpected send")
-	} else {
-		goruntime.Gosched()
-		if fd.closed != 2 {
-			t.Errorf("receive go routine not stopped yet")
+	count := 0
+	for sw.StopCount() < 2 {
+		count++
+		if count > 40 {
+			t.Errorf("method receive did not stop after 40 retries")
+			break
 		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

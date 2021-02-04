@@ -56,7 +56,10 @@ type StreamWatcher struct {
 	reporter Reporter
 	result   chan Event
 	done     chan struct{}
-	stopped  bool
+
+	// data required for test mode
+	test      func()
+	stopcount int
 }
 
 // NewStreamWatcher creates a StreamWatcher from the given decoder.
@@ -88,18 +91,24 @@ func (sw *StreamWatcher) Stop() {
 	// Call Close() exactly once by locking and setting a flag.
 	sw.Lock()
 	defer sw.Unlock()
-	if !sw.stopped {
-		sw.stopped = true
+	if sw.stopcount == 0 {
 		close(sw.done)
 		sw.source.Close()
 	}
+	sw.stopcount++
 }
 
 // stopping returns true if Stop() was called previously.
 func (sw *StreamWatcher) stopping() bool {
 	sw.Lock()
 	defer sw.Unlock()
-	return sw.stopped
+	if sw.stopcount > 0 {
+		return true
+	}
+	if sw.test != nil {
+		sw.test()
+	}
+	return false
 }
 
 // receive reads result from the decoder in a loop and sends down the result channel.
