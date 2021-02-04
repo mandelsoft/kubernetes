@@ -23,7 +23,6 @@ import (
 	goruntime "runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	. "k8s.io/apimachinery/pkg/watch"
@@ -152,10 +151,10 @@ func TestStreamWatcherStopRace(t *testing.T) {
 
 	for i, item := range table {
 		fd.items <- item
-		fmt.Printf("sent event %d: %+v\n", i+1, item)
+		t.Logf("sent event %d: %+v\n", i+1, item)
 	}
 
-	fmt.Printf("waiting for event 1\n")
+	t.Logf("waiting for event 1\n")
 	got, open := <-sw.ResultChan()
 	if !open {
 		t.Errorf("unexpected early close")
@@ -163,18 +162,18 @@ func TestStreamWatcherStopRace(t *testing.T) {
 	if e, a := table[0], got; !reflect.DeepEqual(e, a) {
 		t.Errorf("expected %v, got %v", e, a)
 	} else {
-		fmt.Printf("GOT 1: %+v\n", got)
+		t.Logf("GOT 1: %+v\n", got)
 	}
 
-	for fd.getCount() < 2 {
-		fmt.Printf("waiting for receive...\n")
-		time.Sleep(time.Second)
+	if fd.getCount() < 2 { // FOR
+		t.Logf("waiting for receive...\n")
+		goruntime.Gosched()
 	}
 	fd.setErr(fmt.Errorf("some stop error on underlying watch stream"))
 	fd.Close()
 	// now next decode would fail, it is called after the next successful consumption
 
-	fmt.Printf("waiting for event 2\n")
+	t.Logf("waiting for event 2\n")
 	got, open = <-sw.ResultChan()
 	if !open {
 		t.Errorf("unexpected early close")
@@ -182,16 +181,16 @@ func TestStreamWatcherStopRace(t *testing.T) {
 	if e, a := table[1], got; !reflect.DeepEqual(e, a) {
 		t.Errorf("expected %v, got %v", e, a)
 	} else {
-		fmt.Printf("GOT 2: %+v\n", got)
+		t.Logf("GOT 2: %+v\n", got)
 	}
 
 	// ok, now the streamwatcher receive would try to decode the next
 	// element from the stream, which will provide the error set above.
 	// wait, until the error has been consumed, this will initiate
 	// the error send request.
-	for fd.getCount() < 3 {
-		fmt.Printf("waiting for error received...\n")
-		time.Sleep(time.Second)
+	if fd.getCount() < 3 { // FOR
+		t.Logf("waiting for error received...\n")
+		goruntime.Gosched()
 	}
 	sw.Stop()
 	// Be sure the receive go routine had a chance to run.
@@ -204,7 +203,7 @@ func TestStreamWatcherStopRace(t *testing.T) {
 	// the stream has been externally stopped, so the sending go routine
 	// would block forever
 	if open {
-		fmt.Printf("GOT: %+v\n", got)
+		t.Logf("GOT: %+v\n", got)
 		t.Errorf("unexpected send")
 	} else {
 		goruntime.Gosched()
