@@ -370,19 +370,19 @@ func TestSharedInformerRemoveHandler(t *testing.T) {
 	handler2 := &ResourceEventHandlerFuncs{}
 	informer.AddEventHandler(handler2)
 
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler")
+	if informer.EventHandlerCount() != 2 {
+		t.Errorf("informer pretends to have %d registered handler, instead of 2", informer.EventHandlerCount())
 	}
 
 	if err := informer.RemoveEventHandler(handler2); err != nil {
-		t.Errorf("removing on pointer handler failed: %s", err)
+		t.Errorf("removing of first pointer handler failed: %s", err)
 	}
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler after removing first of two")
+	if informer.EventHandlerCount() != 1 {
+		t.Errorf("after removing handler informer pretends to have %d registered handler(s), instead of 1", informer.EventHandlerCount())
 	}
 
 	if err := informer.RemoveEventHandler(handler1); err != nil {
-		t.Errorf("removing on pointer handler failed: %s", err)
+		t.Errorf("removing of second pointer handler failed: %s", err)
 	}
 	if informer.EventHandlerCount() != 0 {
 		t.Errorf("informer pretends to still have registered handlers after removing both handlers")
@@ -401,26 +401,26 @@ func TestSharedInformerRemoveHandlerFailure(t *testing.T) {
 	handler2 := &ResourceEventHandlerFuncs{}
 	informer.AddEventHandler(handler2)
 
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler")
+	if informer.EventHandlerCount() != 2 {
+		t.Errorf("informer pretends to have %d registered handler(s), instead of 2", informer.EventHandlerCount())
 	}
 
 	if err := informer.RemoveEventHandler(handler2); err != nil {
-		t.Errorf("removing on pointer handler failed: %s", err)
+		t.Errorf("removing of pointer handler failed: %s", err)
 	}
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler after removing first of two")
+	if informer.EventHandlerCount() != 1 {
+		t.Errorf("after removal informer pretends to have %d registered handler(s), instead of 1", informer.EventHandlerCount())
 	}
 
 	if err := informer.RemoveEventHandler(handler1); err == nil {
-		t.Errorf("removing on value handler does not fail")
+		t.Errorf("removing value handler did not fail")
 	} else {
-		if err.Error() != "uncomparable handler" {
+		if err.Error() != "Uncomparable handler {<nil> <nil> <nil>} was not removed" {
 			t.Errorf("unexpected remove error: %s", err)
 		}
 	}
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler after failed removal")
+	if informer.EventHandlerCount() != 1 {
+		t.Errorf("after failed removal informer pretends to have %d registered handler(s), instead of 1", informer.EventHandlerCount())
 	}
 }
 
@@ -435,15 +435,15 @@ func TestSharedInformerMultipleRegistration(t *testing.T) {
 	informer.AddEventHandler(handler1)
 	informer.AddEventHandler(handler1)
 
-	if informer.EventHandlerCount() == 0 {
-		t.Errorf("informer pretends not have a registered handler")
+	if informer.EventHandlerCount() != 2 {
+		t.Errorf("informer pretends to have %d registered handler(s), instead of 1", informer.EventHandlerCount())
 	}
 
 	if err := informer.RemoveEventHandler(handler1); err != nil {
-		t.Errorf("removing on pointer handler failed: %s", err)
+		t.Errorf("removing of duplicate pointer handler failed: %s", err)
 	}
 
 	if informer.EventHandlerCount() != 0 {
-		t.Errorf("informer pretends to still have a registered handler after removal")
+		t.Errorf("informer pretends to still have a registered handler after removal of duplicate registrations")
 	}
 }
