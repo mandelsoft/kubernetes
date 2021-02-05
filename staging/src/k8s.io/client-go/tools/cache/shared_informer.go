@@ -587,7 +587,7 @@ type EventHandlerRemovable interface {
 }
 
 // ExtendedSharedIndexInformer is an extended interface to the
-// SharedIndexInformer informer interface implemented by the standard
+// SharedIndexInformer interface implemented by the standard
 // sharedIndexInformer implementation,
 // It offers the removing of handlers and some state info useful
 // to use after handler removal to decide whether an informer
@@ -636,7 +636,7 @@ func (s *sharedIndexInformer) RemoveEventHandler(handler ResourceEventHandler) e
 	}
 
 	if !reflect.ValueOf(handler).Type().Comparable() {
-		return fmt.Errorf("uncomparable handler")
+		return fmt.Errorf("Uncomparable handler %v was not removed", handler)
 	}
 
 	// in order to safely remove, we have to
@@ -751,7 +751,7 @@ func (p *sharedProcessor) removeListenerFor(handler ResourceEventHandler) {
 	defer p.listenersLock.Unlock()
 
 	listeners := p.removeListenerLockedFor(handler)
-	if p.listenersStarted && len(listeners) > 0 {
+	if p.listenersStarted {
 		for _, l := range listeners {
 			close(l.addCh)
 		}
