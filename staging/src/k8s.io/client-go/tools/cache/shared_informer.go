@@ -152,6 +152,15 @@ type SharedInformer interface {
 	// because the implementation takes time to do work and there may
 	// be competing load and scheduling noise.
 	AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration)
+	// RemoveEventHandler removes a formerly added event handler, again.
+	// It is possible to remove only event handlers that are (go) comparable,
+	// This means event handlers like ResourceEventHandlerFuncs cannot be removed
+	// if added by value and not by reference, because they contain function pointers
+	// that are not comparable in go. Trying to remove an uncomparable handler
+	// results in an appropriate error.
+	// Please note: If, for some reason, the same handler has been added multiple
+	// times, all registrations will be removed.
+	RemoveEventHandler(handler ResourceEventHandler) error
 	// GetStore returns the informer's local cache as a Store.
 	GetStore() Store
 	// GetController is deprecated, it does nothing useful
@@ -182,6 +191,18 @@ type SharedInformer interface {
 	// The handler should return quickly - any expensive processing should be
 	// offloaded.
 	SetWatchErrorHandler(handler WatchErrorHandler) error
+
+	// EventHandlerCount return the number of actually registered
+	// event handlers.
+	EventHandlerCount() int
+
+	// IsStopped reports whether the informer has already been stopped
+	// Adding event handlers to already stopped informers is not possible
+	// and is silently ignored.
+	IsStopped() bool
+
+	// IsStarted reports whether the informer has already been started
+	IsStarted() bool
 }
 
 // SharedIndexInformer provides add and get Indexers ability based on SharedInformer.
@@ -571,43 +592,14 @@ func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
 	return nil
 }
 
-// EventHandlerRemovable is an extension interface
-// for a SharedIndexInformer that allows to remove event handlers again.
-// It is possible to remove only event handlers that are (go) comparable,
-// This means event handlers like ResourceEventHandlerFuncs cannot be removed
-// if added by value and not by reference, because they contain function pointers
-// that are not comparable in go. Trying to remove an uncomparable handler
-// results in an appropriate error.
-// This feature can be used to dynamically add and remove watches again depending
-// on the actual state of a controller.
-// Please note: If, for some reason, the same handler has been added multiple
-// times, all registrations will be removed.
-type EventHandlerRemovable interface {
-	RemoveEventHandler(handler ResourceEventHandler) error
-}
-
-// ExtendedSharedIndexInformer is an extended interface to the
-// SharedIndexInformer interface implemented by the standard
-// sharedIndexInformer implementation,
-// It offers the removing of handlers and some state info useful
-// to use after handler removal to decide whether an informer
-// is still required.
-type ExtendedSharedIndexInformer interface {
-	SharedIndexInformer
-	EventHandlerRemovable
-	EventHandlerCount() int
-	IsStopped() bool
-	IsStarted() bool
-}
-
-// IsStarted reports whether the informaer has already been started
+// IsStarted reports whether the informer has already been started
 func (s *sharedIndexInformer) IsStarted() bool {
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()
 	return s.started
 }
 
-// IsStopped reports whether the informaer has already been stopped
+// IsStopped reports whether the informer has already been stopped
 func (s *sharedIndexInformer) IsStopped() bool {
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()

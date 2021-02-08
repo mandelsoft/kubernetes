@@ -363,7 +363,7 @@ func TestSharedInformerRemoveHandler(t *testing.T) {
 	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
 	source.ListError = fmt.Errorf("Access Denied")
 
-	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(ExtendedSharedIndexInformer)
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second)
 
 	handler1 := &ResourceEventHandlerFuncs{}
 	informer.AddEventHandler(handler1)
@@ -394,7 +394,7 @@ func TestSharedInformerRemoveHandlerFailure(t *testing.T) {
 	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
 	source.ListError = fmt.Errorf("Access Denied")
 
-	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(ExtendedSharedIndexInformer)
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second)
 
 	handler1 := ResourceEventHandlerFuncs{}
 	informer.AddEventHandler(handler1)
@@ -429,7 +429,7 @@ func TestSharedInformerMultipleRegistration(t *testing.T) {
 	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
 	source.ListError = fmt.Errorf("Access Denied")
 
-	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(ExtendedSharedIndexInformer)
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second)
 
 	handler1 := &ResourceEventHandlerFuncs{}
 	informer.AddEventHandler(handler1)
@@ -445,5 +445,51 @@ func TestSharedInformerMultipleRegistration(t *testing.T) {
 
 	if informer.EventHandlerCount() != 0 {
 		t.Errorf("informer pretends to still have a registered handler after removal of duplicate registrations")
+	}
+}
+
+func TestStateSharedInformer(t *testing.T) {
+	source := fcache.NewFakeControllerSource()
+	source.Add(&v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}})
+
+	informer := NewSharedInformer(source, &v1.Pod{}, 1*time.Second).(*sharedIndexInformer)
+	listener := newTestListener("listener", 0, "pod1")
+	informer.AddEventHandlerWithResyncPeriod(listener, listener.resyncPeriod)
+
+	if informer.IsStarted() {
+		t.Errorf("informer already started after creation")
+		return
+	}
+	if informer.IsStopped() {
+		t.Errorf("informer already stopped after creation")
+		return
+	}
+	stop := make(chan struct{})
+	go informer.Run(stop)
+	if !listener.ok() {
+		t.Errorf("informer did not report initial objects")
+		return
+	}
+
+	if !informer.IsStarted() {
+		t.Errorf("informer does not report to be started although handling events")
+		return
+	}
+	if informer.IsStopped() {
+		t.Errorf("informer reports to be stopped although stop channel not closed")
+		return
+	}
+
+	close(stop)
+	fmt.Println("sleeping")
+	time.Sleep(1 * time.Second)
+
+	if !informer.IsStopped() {
+		t.Errorf("informer reports not to be stopped although stop channel closed")
+		return
+	}
+	if !informer.IsStarted() {
+		t.Errorf("informer reports not to be started after it has been started and stopped")
+		return
 	}
 }
